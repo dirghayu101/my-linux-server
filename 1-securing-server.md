@@ -44,7 +44,106 @@ nd 'a' flag are useful.
 - Now I can ssh just by using `ssh <hostname>` and it doesn't ask me for password and is more secure. 
 - Also I got to know about remote SSH extension that you can use to connect your VS code interface with your virtual machine.
 
+# Github setup [2]:
+- `ssh-keygen -t ed25519 -C <your-email>` to generate a public private key pair.
+    - You have to add your private key to your profile under setting in your github dashboard.
+-  `eval "$(ssh-agent -s)"` starts an ssh-agent process in the background which will be a service responsible for authorizing our VM when we perform pull, push, clone or other git API calls.
+- `ssh-add ~/.ssh/id_ed25519` here we are providing with the keys to be used by ssh-agent.
+- `git config --global user.name "<your-name>"` this will setup your commit name.
+- `git config --global user.email "<your-email>"` this will setup your commit email.
+- `ps aux` or `ps -ejH` or `ps axjf` to see the process tree of running process. Other helpful command for processes and their related metadata: `top` or `htop`.
+- `kill <PID>` or `kill -9 <PID>` to kill or forcefully kill a running process.
+- **Observation**: Even if you kill ssh-agent process, git will authorize you natively, it doesn't really make use of ssh-agent, so you don't have to worry about starting ssh-agent in each session to work with remote repositories.
+
 # 4. Setting up firewall:
+- So the default firewall in ubuntu is ufw. I will be directly using `iptables` because of these reasons:
+    - `iptables` is more general `ufw` is ubuntu specific. More specifically it is an interface/abstraction layer on top of iptables.
+    - `iptables` is more versatile and granular.
+- I wanna see my ufw current rules and different configuration currently applied. Since this is a rented virtual machine there might be some configuration that I would wanna maintain in iptables even if I make the switch.
+    - Later realized this is a bad approach as both ufw and iptable-persistent are just interfaces on top of iptable package.
+    - You can use `su - <username>` to switch user to root, use: `sudo -i` or `sudo su -`
+- `ufw status` to check the ufw's status. `ufw show raw` shows the current rules. There are no default rules and also I saw some docker related rules.
+- To get information about a package: `apt info <package-name>` or `apt search <package-name>`.
+- **Very important miscalculation**: If the iptables package is not installed on a Linux server, neither ufw nor iptables-persistent will be able to set up or manage firewall rules, as both rely on iptables to function. So conclusively, you can safely remove ufw without worrying about the affect of removal on the state of current rules.
+- Now we will install `iptables-persistent`, this is the package that will store the state of iptable. We will be directly defining rule for iptable using the package/keyword `iptable` but instead of ufw, `iptable-persistent` will be storing the state.
+- Before performing the below commands it is recommended to have two ssh connection to the same host, in case you lock yourself out.
+- Enter the following commands:
+```bash
+    # Switch to root.
+    sudo su -
+
+    # Install iptables-persistent, this will maintain the state of iptables and replace ufw. It automatically removes ufw
+    apt install iptables-persistent     
+
+    # Check status of services to confirm everything is going well using:
+    systemctl status -l ufw
+
+    # netfilter-persistent is the service. NOTE: service and package name can be different. The package name of netfilter-persistent service is iptables.
+    systemctl status -l netfilter-persistent
+
+    # This shows your current iptables firewall rule:
+    iptables -L -vn --line-numbers
+```
+- Now defining the firewall rules. One important thing to note is that the sequence matters. Iptables processes rules in the order they are listed, from top to bottom. When a packet matches a rule, the corresponding action (such as ACCEPT, DROP, or REJECT) is taken, and no further rules are evaluated for that packet.
+```bash
+    # This is very interesting rule. So this makes your firewall dynamic.
+    # -A INPUT: This appends the rule to the INPUT chain, which handles incoming packets.
+    # -m state: This uses the state module, which allows matching packets based on their connection state.
+    # --state ESTABLISHED: This matches packets that are part of an existing connection. For example, if you initiate a connection from your machine to a web server, the response packets from the web server are considered ESTABLISHED.
+    # --state RELATED: This matches packets that are not part of an existing connection but are related to an existing connection. For example, an FTP data transfer connection is related to the initial FTP control connection.
+    # -j ACCEPT: This specifies the target action for matching packets, which in this case is to accept them.
+    iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+    
+    # The loopback interface is critical for internal communication within the host. Many applications and services rely on the loopback interface to function correctly. Like localhost.
+    iptables -A INPUT -p all -i lo -j ACCEPT    # default of -p is all.
+    
+    # Enables ssh connection over TCP protocol through port 22. If I don't set this, the connection will break when I set the drop policy.
+    iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+    
+    # Allows DNS resolution via both UDP and TCP.
+    iptables -A INPUT -p udp --dport 53 -j ACCEPT
+    iptables -A INPUT -p tcp --dport 53 -j ACCEPT
+
+    # Will be changing the default port 22.
+    sudo iptables -A INPUT -p tcp --dport <new-ssh-port> -j ACCEPT
+    
+    # Sets default policy for FORWARD and INPUT CHAIN to DROP.
+    iptables -P INPUT DROP
+    iptables -P FORWARD DROP
+    iptables -nvL --line
+    
+    # Saves the iptables rules.
+    iptables-save > /etc/iptables/rules.v4
+    # Alternative. This also prints on the console.
+    iptables-save | tee /etc/iptables/rules.v4
+    exit
+```
+- Why did we install iptables-persistent, we didn't use it anywhere. [4]
+    - So you have to load the iptables rule manually using this on every reload if you don't use iptables-persistent: `iptables-restore < /etc/iptables.conf`. These are the same rules that you saved using: `iptables-save > /etc/iptables/rules.v4`.
+- Try to ssh to your virtual machine and confirm you are not locket out.
+
+# 5. Securing the SSH Connection:
+- You have to edit `/etc/ssh/sshd_config` file. Use `sudo vim /etc/ssh/sshd_config`. Or nano or any other editor of your choice.
+    - On a side note, in the `/etc/ssh/` directory there are sshd_config and ssh_config files. 
+    - `/etc/ssh/sshd_config` is used to configure how SSH connections are made with the device.
+    - `/etc/ssh/sshd_config` affects how the device will make an SSH connection to another device.
+- In the sshd_config file, look for `# Port 22` and `# PasswordAuthentication yes`. It was on the line 14 and line 18 consecutively in my machine. Uncomment it by removing the '#' and change 22 to whatever port number you wanna use for SSH connection and change 'yes' to 'no' for PasswordAuthentication.
+- Once you are done modifying the file use these commands to reload configuration into systemctl memory (reloads dependency tree) [5]: `sudo systemctl daemon-reload` and `sudo systemctl restart ssh`.
+- Now delete the port 22 accept rule that we set earlier using `sudo iptables -D INPUT -p tcp --dport 22 -j ACCEPT` and save it using `sudo  iptables-save | sudo tee /etc/iptables/rules.v4`.
+
+# Notes: Netfilter (from [3]):
+- A firewall works by interacting with the packet filtering hooks in the Linux kernel’s networking stack. These kernel hooks are known as the netfilter framework.
+- Every packet that passes through the networking layer (incoming or outgoing) will trigger these hooks, allowing programs to interact with the traffic at key points. The kernel modules associated with iptables register with these hooks in order to ensure that the traffic conforms to the conditions laid out by the firewall rules.
+- The following hooks represent these well-defined points in the networking stack:
+    - NF_IP_PRE_ROUTING: This hook will be triggered by any incoming traffic very soon after entering the network stack. This hook is processed before any routing decisions have been made regarding where to send the packet.
+    - NF_IP_LOCAL_IN: This hook is triggered after an incoming packet has been routed if the packet is destined for the local system.
+    - NF_IP_FORWARD: This hook is triggered after an incoming packet has been routed if the packet is to be forwarded to another host.
+    - NF_IP_LOCAL_OUT: This hook is triggered by any locally created outbound traffic as soon as it hits the network stack.
+    - NF_IP_POST_ROUTING: This hook is triggered by any outgoing or forwarded traffic after routing has taken place and just before being sent out on the wire.
 
 # References:
 [1]: https://linuxize.com/post/using-the-ssh-config-file/
+[2]: https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent?platform=linux
+[3]: https://www.digitalocean.com/community/tutorials/a-deep-dive-into-iptables-and-netfilter-architecture
+[4]: https://askubuntu.com/questions/66890/how-can-i-make-a-specific-set-of-iptables-rules-permanent
+[5]: https://unix.stackexchange.com/questions/364782/what-does-systemctl-daemon-reload-do
