@@ -126,7 +126,7 @@ nd 'a' flag are useful.
 - You have to edit `/etc/ssh/sshd_config` file. Use `sudo vim /etc/ssh/sshd_config`. Or nano or any other editor of your choice.
     - On a side note, in the `/etc/ssh/` directory there are sshd_config and ssh_config files. 
     - `/etc/ssh/sshd_config` is used to configure how SSH connections are made with the device.
-    - `/etc/ssh/sshd_config` affects how the device will make an SSH connection to another device.
+    - `/etc/ssh/ssh_config` affects how the device will make an SSH connection to another device.
 - In the sshd_config file, look for `# Port 22` and `# PasswordAuthentication yes`. It was on the line 14 and line 18 consecutively in my machine. Uncomment it by removing the '#' and change 22 to whatever port number you wanna use for SSH connection and change 'yes' to 'no' for PasswordAuthentication.
 - Once you are done modifying the file use these commands to reload configuration into systemctl memory (reloads dependency tree) [5]: `sudo systemctl daemon-reload` and `sudo systemctl restart ssh`.
 - Now delete the port 22 accept rule that we set earlier using `sudo iptables -D INPUT -p tcp --dport 22 -j ACCEPT` and save it using `sudo  iptables-save | sudo tee /etc/iptables/rules.v4`.
