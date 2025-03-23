@@ -131,7 +131,17 @@ nd 'a' flag are useful.
 - Once you are done modifying the file use these commands to reload configuration into systemctl memory (reloads dependency tree) [5]: `sudo systemctl daemon-reload` and `sudo systemctl restart ssh`.
 - Now delete the port 22 accept rule that we set earlier using `sudo iptables -D INPUT -p tcp --dport 22 -j ACCEPT` and save it using `sudo  iptables-save | sudo tee /etc/iptables/rules.v4`.
 
-# Notes: Netfilter (from [3]):
+# 6. Setting up root access using keys:
+- So at this point I can successfully ssh into my linux machine using local name for the machine and as I have keys setup, it doesn't ask for password.
+- But I want something similar to happen for root as well, and I also want to disable root password login.
+- So I modified sshd_config file under /etc/ssh/ and I had mistakenly disabled root login. Now I have only disabled password authentication, and enabled root login back again.
+    `sudo vim /etc/ssh/sshd_config`
+    `sudo systemctl daemon-reload; sudo systemctl restart ssh;`
+- Also I am not creating another root key pair so I am using:
+    `cp -r /home/{home_user_name}/.ssh /root/`
+
+
+# Extra Notes: Netfilter (from [3]):
 - A firewall works by interacting with the packet filtering hooks in the Linux kernel’s networking stack. These kernel hooks are known as the netfilter framework.
 - Every packet that passes through the networking layer (incoming or outgoing) will trigger these hooks, allowing programs to interact with the traffic at key points. The kernel modules associated with iptables register with these hooks in order to ensure that the traffic conforms to the conditions laid out by the firewall rules.
 - The following hooks represent these well-defined points in the networking stack:
